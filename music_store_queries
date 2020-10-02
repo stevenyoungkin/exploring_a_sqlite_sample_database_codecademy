@@ -1,0 +1,233 @@
+------ BASIC ANALSIS ---------
+
+-- Which tracks appeared in the most playlists? how many playlist did they appear in?
+
+SELECT tracks.name, playlist_track.TrackId, COUNT(*) AS 'num_of_playlists'
+FROM playlist_track 
+JOIN tracks
+ON tracks.TrackId = playlist_track.TrackId
+GROUP BY playlist_track.TrackId
+ORDER BY num_of_playlists DESC
+LIMIT 10;
+
+-- Which track generated the most revenue? which album? which genre?
+
+  ---- track ----
+   
+WITH sold_tracks AS 
+  (
+	SELECT TrackId, COUNT(*) AS 'num_track_sold'
+	FROM invoice_items
+	GROUP BY TrackId
+  )
+SELECT tracks.name, tracks.UnitPrice, sold_tracks.num_track_sold, 
+		(tracks.UnitPrice*sold_tracks.num_track_sold) AS 'total_track_sale'
+FROM tracks
+JOIN sold_tracks
+ON tracks.TrackId = sold_tracks.TrackId
+ORDER BY total_track_sale DESC
+LIMIT 10;
+
+  ---- album ----
+
+WITH sold_tracks AS 
+	(
+	SELECT TrackId, COUNT(*) AS 'num_track_sold'
+	FROM invoice_items
+	GROUP BY TrackId
+	)
+, track_sales AS 
+	(
+	SELECT AlbumId, UnitPrice, sold_tracks.num_track_sold, 
+		(tracks.UnitPrice*sold_tracks.num_track_sold) AS 'total_track_sale'
+	FROM tracks
+	JOIN sold_tracks
+	ON tracks.TrackId = sold_tracks.TrackId
+	)
+SELECT albums.title, albums.AlbumId, SUM(track_sales.total_track_sale) AS 'sum_album'
+FROM albums
+JOIN track_sales
+ON track_sales.AlbumId = albums.AlbumId
+GROUP BY albums.AlbumId
+ORDER BY sum_album DESC
+LIMIT 10;
+
+  ---- genre ---
+
+WITH sold_tracks AS 
+	(
+	SELECT TrackId, COUNT(*) AS 'num_track_sold'
+	FROM invoice_items
+	GROUP BY TrackId
+	)
+, track_sales AS 
+	(
+	SELECT tracks.GenreId, tracks.UnitPrice, sold_tracks.num_track_sold, 
+		(tracks.UnitPrice*sold_tracks.num_track_sold) AS 'total_track_sale'
+	FROM tracks
+	JOIN sold_tracks
+	ON tracks.TrackId = sold_tracks.TrackId
+	)
+SELECT genres.name, genres.GenreId, ROUND(SUM(track_sales.total_track_sale),2) AS 'sum_genre'
+FROM genres
+JOIN track_sales
+ON track_sales.GenreId = genres.GenreId
+GROUP BY genres.GenreId
+ORDER BY sum_genre DESC
+LIMIT 10;
+
+
+-- Which countries have the highest sales revenue? What percent of total revenue 
+-- does each country make up?
+
+SELECT BillingCountry, SUM(total) AS 'total_revenue',
+	   ROUND((SUM(total)/(SELECT SUM(total) FROM invoices)),4)*100 AS 'percent_total_revenue'
+FROM invoices
+GROUP BY BillingCountry
+ORDER BY total_revenue DESC
+LIMIT 10;
+
+-- How many customers did each employee support, what is the average revenue for each sale, 
+-- and what is their total sale?
+
+ --- first part ---
+
+SELECT employees.EmployeeId, employees.FirstName, employees.LastName,
+	   employees.title, COUNT(*) AS 'num_customers_supported'
+FROM employees
+JOIN customers
+ON customers.SupportRepId = employees.EmployeeId
+GROUP BY employees.EmployeeId
+ORDER BY num_customers_supported DESC;
+
+ --- second/third question ---
+
+WITH employee_customers AS 
+	(
+	SELECT employees.EmployeeId AS 'EmployeeId', employees.FirstName AS 'FirstName', 
+		   employees.LastName AS 'LastName', employees.title AS 'Title', 
+		   customers.CustomerId AS 'CustomerID'
+	FROM employees
+	JOIN customers
+	ON customers.SupportRepId = employees.EmployeeId
+	)
+SELECT ec.EmployeeId, ec.FirstName, ec.LastName, ec.Title, 
+	   ROUND(AVG(invoices.total),2) AS 'avg_revenue_per_sale',
+	   ROUND(SUM(invoices.total),2) AS 'total_revenue_per_sale'
+FROM employee_customers AS 'ec'
+JOIN invoices
+ON invoices.CustomerId = ec.CustomerId
+GROUP BY ec.EmployeeId
+ORDER BY total_revenue_per_sale DESC;
+
+
+------ INTERMEDIATE CHALLENGE --------
+
+-- Do longer or shorter length albums tend to generate more revenue?
+
+WITH sold_tracks AS 
+	(
+	SELECT TrackId, COUNT(*) AS 'num_track_sold'
+	FROM invoice_items
+	GROUP BY TrackId
+	)
+, track_sales AS 
+	(
+	SELECT AlbumId, UnitPrice, sold_tracks.num_track_sold, 
+		(tracks.UnitPrice*sold_tracks.num_track_sold) AS 'total_track_sale'
+	FROM tracks
+	JOIN sold_tracks
+	ON tracks.TrackId = sold_tracks.TrackId
+	)
+, sum_album_sale AS 
+	(
+	SELECT albums.title AS 'Title', albums.AlbumId AS 'AlbumId', 
+		   SUM(track_sales.total_track_sale) AS 'sum_album'
+	FROM albums
+	JOIN track_sales
+	ON track_sales.AlbumId = albums.AlbumId
+	GROUP BY albums.AlbumId
+	)
+SELECT sas.AlbumId, sas.Title, 
+	   sas.sum_album,
+	   SUM((tracks.Milliseconds/60000)) AS 'track_length_mins'
+FROM tracks
+JOIN sum_album_sale AS 'sas'
+ON tracks.AlbumId = sas.AlbumId
+GROUP BY sas.AlbumId
+ORDER BY sas.sum_album DESC
+LIMIT 50;
+
+-- Is the number of times a track appear in any playlist a good indicator of sales? 
+
+WITH sold_tracks AS 
+	(
+	SELECT TrackId, COUNT(*) AS 'num_track_sold'
+	FROM invoice_items
+	GROUP BY TrackId
+	)
+, total_track_sales AS 
+	(
+	SELECT tracks.TrackId AS 'TrackId', tracks.name AS 'name', 
+		   tracks.UnitPrice AS 'UnitPrice', sold_tracks.num_track_sold AS 'num_track_sold', 
+		(tracks.UnitPrice*sold_tracks.num_track_sold) AS 'total_track_sale'
+	FROM tracks
+	JOIN sold_tracks
+	ON tracks.TrackId = sold_tracks.TrackId
+	)
+SELECT tts.TrackId, tts.name, tts.UnitPrice, tts.num_track_sold, 
+	   tts.total_track_sale, COUNT(*) AS 'num_times_in_playlist'
+FROM total_track_sales AS 'tts'
+JOIN playlist_track
+ON playlist_track.TrackId = tts.TrackId
+GROUP BY tts.TrackId
+--ORDER BY num_times_in_playlist DESC LIMIT 30;
+ORDER BY tts.total_track_sale DESC LIMIT 30;
+ 
+ 
+------- ADVANCED CHALLENGE -------
+
+--  How much revenue is generated each year, and what is its percent change from the 
+--  previous year? 
+
+WITH previous_year AS 
+	(
+	SELECT (CAST(strftime('%Y', InvoiceDate) AS INTEGER)) AS 'PreviousYear',
+		   SUM(total) AS 'total_previous_year'
+	FROM invoices
+	GROUP BY PreviousYear
+	)
+, current_year AS 
+	(
+	SELECT (CAST(strftime('%Y', InvoiceDate) AS INTEGER)) AS 'CurrentYear',
+		   SUM(total) AS 'total_current_year'	
+	FROM invoices
+	GROUP BY CurrentYear
+	)
+SELECT cy.CurrentYear AS 'Year', cy.total_current_year AS 'Annual Revenue [$]',
+		ifnull(ROUND(((cy.total_current_year-py.total_previous_year)/py.total_previous_year),4)*100, 'n/a')
+		AS 'PercentChange [%]'
+FROM current_year AS 'cy'
+LEFT JOIN previous_year AS 'py'
+ON cy.CurrentYear = py.PreviousYear + 1
+GROUP BY cy.CurrentYear;
+
+
+
+
+
+
+
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
