@@ -4,4 +4,4 @@ URL: https://discuss.codecademy.com/t/data-science-independent-project-2-explore
 
 Objective: You are the lead data analyst for a popular music store. Help them analyze their sales and service!
 
-NOTE: RDBMS is SQLite. Queriers were done within DB Browser for SQLite. 
+NOTE: RDBMS is SQLite. Queriers were written within DB Browser for SQLite. 
